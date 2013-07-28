@@ -1,0 +1,499 @@
+#! /bin/sh
+set -e
+
+rm -rf config
+
+SEEDMIRROR=http://people.canonical.com/~ubuntu-archive/seeds/
+if [ -z "$MIRROR" ]; then
+	case $(hostname --fqdn) in
+		bld-*.mmjgroup.com)	;;
+		*.mmjgroup.com)
+			case $ARCH in
+				i386|amd64)	MIRROR=http://archive.mmjgroup.com/ubuntu/ ;;
+				*)		MIRROR=http://archive.mmjgroup.com/ubuntu-ports/ ;;
+			esac
+			;;
+		*.0c3.net)
+			case $ARCH in
+				i386|amd64)	MIRROR=http://mirrors.0c3.net/ubuntu/ ;;
+				*)		MIRROR=http://mirrors.0c3.net/ubuntu-ports/ ;;
+			esac
+			;;
+		*.ubuntu.com)		MIRROR=http://ftpmaster.internal/ubuntu/
+					SEEDMIRROR=http://archive-team.internal/seeds/
+					;;
+		*.warthogs.hbd.com)	MIRROR=http://ftpmaster.internal/ubuntu/
+					SEEDMIRROR=http://archive-team.internal/seeds/
+					;;
+		*.buildd)		MIRROR=http://ftpmaster.internal/ubuntu/
+					SEEDMIRROR=http://archive-team.internal/seeds/
+					;;
+	esac
+fi
+
+mkdir -p config/task-lists config/package-lists
+
+add_task ()
+{
+	local pass="$1"
+	shift
+	local task
+
+	for task; do
+		echo "$task" >> "config/task-lists/livecd-rootfs.chroot_$pass.list"
+	done
+}
+
+add_package ()
+{
+	local pass="$1"
+	shift
+	local pkg
+
+	for pkg; do
+		echo "$pkg" >> "config/package-lists/livecd-rootfs.chroot_$pass.list"
+	done
+}
+
+OPTS=
+COMPONENTS=
+BINARY_REMOVE_LINUX=:
+BINARY_IMAGES=none
+MEMTEST=none
+SOURCE='--source false'
+BOOTLOADER=none
+LIVE_TASK=
+PREINSTALLED=false
+PREINSTALL_POOL=
+PREINSTALL_POOL_SEEDS=
+
+case $IMAGEFORMAT in
+	ext2|ext3|ext4)
+		OPTS="${OPTS:+$OPTS }--initramfs none --chroot-filesystem $IMAGEFORMAT"
+		PREINSTALLED=true
+		case $SUBPROJECT in
+			wubi)
+				add_package install lupin-support
+				COMPONENTS='main restricted universe multiverse'
+				;;
+			*)
+				add_package live jasper
+				OPTS="${OPTS:+$OPTS }--swap-file-path SWAP.swap"
+				OPTS="${OPTS:+$OPTS }--swap-file-size 512"
+				;;
+		esac
+		;;
+
+	plain)
+		OPTS="${OPTS:+$OPTS }--initramfs none --chroot-filesystem $IMAGEFORMAT"
+		PREINSTALLED=true
+		;;
+
+	*)
+		add_package live lupin-casper
+		;;
+esac
+
+if [ "$PREINSTALLED" = "true" ] && [ "$SUBPROJECT" != "wubi" ]; then
+	# This is an oem-config preinstalled image, touch a random file that
+	# we can refer back to during build, cause that's wildly hackish
+	touch config/oem-config-preinstalled
+	case $PROJECT in
+		kubuntu*)
+			add_package live oem-config-kde ubiquity-frontend-kde
+			add_package live ubiquity-slideshow-kubuntu
+			;;
+		ubuntu-server)
+			add_package live oem-config-debconf ubiquity-frontend-debconf
+			;;
+		ubuntu-core|base)
+			;;
+		*)
+			add_package live oem-config-gtk ubiquity-frontend-gtk
+			add_package live ubiquity-slideshow-ubuntu
+			;;
+	esac
+fi
+
+case $BINARYFORMAT in
+	iso*|usb*)
+		BINARY_IMAGES="$BINARYFORMAT"
+		MEMTEST=memtest86+
+		BOOTLOADER=syslinux
+		;;
+esac
+
+case $PROJECT in
+	ubuntu|ubuntu-dvd)
+		case $ARCH in
+			amd64|i386)
+				# We have to use metapackages rather than
+				# tasks, so that the X enablement stack can
+				# be used rather than the normal stack.
+				# This changes dependency resolution
+				# sufficiently that some manual hints are
+				# needed.
+				add_package install ubuntu-minimal ubuntu-standard ubuntu-desktop libqt4-sql-sqlite notify-osd
+				add_package install xserver-xorg-lts-quantal
+				;;
+			*)
+				add_task install minimal standard ubuntu-desktop
+				;;
+		esac
+		LIVE_TASK='ubuntu-live'
+		# This should be done automatically, but nothing updates
+		# tasks post-release at the moment.
+		case $ARCH in
+			amd64)
+				add_package live linux-signed-generic-lts-quantal
+				;;
+		esac
+		case $ARCH in
+			amd64|i386)
+				KERNEL_FLAVOURS=generic-lts-quantal
+				;;
+		esac
+		;;
+
+	kubuntu|kubuntu-dvd)
+		add_task install minimal standard kubuntu-desktop
+		LIVE_TASK='kubuntu-live'
+		;;
+
+	kubuntu-active)
+		add_task install minimal standard kubuntu-active
+		LIVE_TASK='kubuntu-active-live'
+		COMPONENTS='main restricted universe'
+		;;
+
+	edubuntu|edubuntu-dvd)
+		case $ARCH in
+			amd64|i386)
+				# We have to use metapackages rather than
+				# tasks, so that the X enablement stack can
+				# be used rather than the normal stack.
+				# This changes dependency resolution
+				# sufficiently that some manual hints are
+				# needed.
+				add_package install ubuntu-minimal ubuntu-standard edubuntu-desktop libqt4-sql-sqlite notify-osd
+				add_package install xserver-xorg-lts-quantal
+				;;
+			*)
+				add_task install minimal standard edubuntu-desktop-gnome
+				;;
+		esac
+		LIVE_TASK='edubuntu-live'
+		# This should be done automatically, but nothing updates
+		# tasks post-release at the moment.
+		case $ARCH in
+			amd64)
+				add_package live linux-signed-generic-lts-quantal
+				;;
+		esac
+		COMPONENTS='main restricted universe'
+		case $ARCH in
+			amd64|i386)
+				KERNEL_FLAVOURS=generic-lts-quantal
+				;;
+		esac
+		;;
+
+	xubuntu)
+		add_task install minimal standard xubuntu-desktop
+		add_package install xterm
+		LIVE_TASK='xubuntu-live'
+		COMPONENTS='main restricted universe multiverse'
+		case $ARCH in
+			amd64|i386)	KERNEL_FLAVOURS=generic ;;
+		esac
+		;;
+
+	ubuntu-netbook)
+		add_task install minimal standard ubuntu-netbook
+		LIVE_TASK='netbook-live'
+		;;
+
+	mythbuntu)
+		case $ARCH in
+			amd64|i386)
+				# We have to use metapackages rather than
+				# tasks, so that the X enablement stack can
+				# be used rather than the normal stack.
+				# This changes dependency resolution
+				# sufficiently that some manual hints are
+				# needed.
+				add_package install ubuntu-minimal ubuntu-standard mythbuntu-desktop notify-osd
+				add_package install xserver-xorg-lts-quantal
+				;;
+			*)
+				add_task install minimal standard mythbuntu-desktop
+				;;
+		esac
+		LIVE_TASK='mythbuntu-live'
+		COMPONENTS='main restricted universe multiverse'
+		case $ARCH in
+			amd64|i386)
+				KERNEL_FLAVOURS=generic-lts-quantal
+				;;
+		esac
+		;;
+
+	lubuntu)
+		add_task install minimal standard lubuntu-desktop
+		LIVE_TASK='lubuntu-live'
+		COMPONENTS='main restricted universe multiverse'
+		case $ARCH in
+			amd64|i386)	KERNEL_FLAVOURS=generic ;;
+		esac
+
+		# The Lubuntu STRUCTURE file has "feature
+		# no-follow-recommends".  Mirror this.
+		export APT_OPTIONS="--yes --no-install-recommends"
+		;;
+
+	ubuntustudio-dvd)
+		add_task install minimal standard ubuntustudio-desktop ubuntustudio-generation ubuntustudio-recording ubuntustudio-font-meta ubuntustudio-graphics ubuntustudio-audio-plugins ubuntustudio-video
+		COMPONENTS='main restricted universe multiverse'
+		case $ARCH in
+			i386)	KERNEL_FLAVOURS=lowlatency-pae ;;
+			amd64)	KERNEL_FLAVOURS=lowlatency ;;
+		esac
+		;;
+
+	base)
+		add_task install minimal standard
+		;;
+
+	ubuntu-server)
+		add_task install minimal standard
+		COMPONENTS='main'
+		PREINSTALL_POOL_SEEDS='server-ship'
+		;;
+
+	ubuntu-core)
+		OPTS="${OPTS:+$OPTS }--bootstrap-flavour=minimal"
+		OPTS="${OPTS:+$OPTS }--linux-packages=none"
+		KERNEL_FLAVOURS=none
+		BINARY_REMOVE_LINUX=false
+		;;
+
+	*)
+		echo "unknown project $PROJECT" >&2
+		exit 2
+		;;
+esac
+
+if [ "$PREINSTALLED" != "true" ]; then
+	add_task live "$LIVE_TASK"
+fi
+
+case $PROJECT in
+	ubuntu-dvd)
+		add_task install ubuntu-usb
+		add_task live ubuntu-usb-live
+		;;
+
+	*-dvd)
+		add_task live "$PROJECT-live"
+		;;
+esac
+
+case $ARCH in
+	armel|armhf)
+		KERNEL_FLAVOURS="${SUBARCH:-$KERNEL_FLAVOURS}"
+		case $SUBARCH in
+			dove)
+				BINARY_REMOVE_LINUX=false
+				;;
+			omap)
+				add_package install u-boot-linaro-omap3-beagle
+				BINARY_REMOVE_LINUX=false
+				;;
+			omap4)
+				add_package install u-boot-linaro-omap4-panda ti-omap4-ppa
+				BINARY_REMOVE_LINUX=false
+				;;
+			mx5)
+				COMPONENTS='main restricted universe'
+				KERNEL_FLAVOURS=linaro-lt-mx5
+				add_package install flash-kernel u-boot-linaro-mx53loco
+				BINARY_REMOVE_LINUX=false
+				;;
+			ac100)
+				COMPONENTS='main restricted universe'
+				add_package install zram-config
+				add_package live ac100-tarball-installer
+				BINARY_REMOVE_LINUX=false
+				;;
+		esac
+		;;
+esac
+
+lb config noauto \
+	--mode ubuntu \
+	--distribution "$SUITE" \
+	--bootstrap-keyring ubuntu-keyring \
+	--binary-images "$BINARY_IMAGES" \
+	--memtest "$MEMTEST" \
+	$SOURCE \
+	--build-with-chroot false \
+	${MIRROR:+--parent-mirror-bootstrap $MIRROR} \
+	${COMPONENTS:+--parent-archive-areas "$COMPONENTS"} \
+	--package-lists none \
+	${KERNEL_FLAVOURS:+--linux-flavours "$KERNEL_FLAVOURS"} \
+	--initsystem none \
+	--bootloader "$BOOTLOADER" \
+	--initramfs-compression lzma \
+	$OPTS
+
+# On some projects/architectures, we want to use backported kernels with
+# improved hardware enablement.  Unfortunately, live-build doesn't have very
+# good support for the way these are laid out: the metapackages are
+# *-generic-lts-*, but the files on disk are *-generic.  We need some
+# contortions to persuade it to do the right thing.
+case $KERNEL_FLAVOURS in
+	*-lts-*)
+		cat >> config/binary << EOF
+
+case \${0##*/} in
+	lb_binary*|build)
+		LB_LINUX_FLAVOURS="$(echo "$KERNEL_FLAVOURS" | sed 's/-lts-[^ ]*//')"
+		;;
+esac
+EOF
+		;;
+esac
+
+if $BINARY_REMOVE_LINUX; then
+	cat > config/binary_rootfs/excludes << EOF
+boot/vmlinu?-*
+boot/initrd.img-*
+EOF
+fi
+
+ln -s /usr/share/live/build/examples/hooks/all_chroot_pyc-purge.sh config/chroot_local-hooks/
+
+case $PROJECT in
+	kubuntu|kubuntu-active)
+		ln -s /usr/share/live/build/examples/hooks/kubuntu_chroot_icon-theme.sh config/chroot_local-hooks/
+		;;
+esac
+
+case $SUBPROJECT in
+	wubi)
+		ln -s /usr/share/live/build/examples/hooks/ubuntu_binary_build-wubildr.sh config/binary_local-hooks/
+		;;
+esac
+
+if [ "$PROPOSED" ]; then
+	. config/bootstrap
+
+	cat > config/archives/proposed.chroot.list << EOF
+deb $LB_PARENT_MIRROR_BINARY_VOLATILE $SUITE-proposed $LB_PARENT_ARCHIVE_AREAS
+EOF
+	cp -a config/archives/proposed.chroot.list \
+	      config/archives/proposed.binary.list
+fi
+
+case $PROJECT in
+	*-dvd)
+		. config/bootstrap
+
+		cat > config/archives/dvd.binary.list << EOF
+deb $LB_PARENT_MIRROR_BINARY $SUITE universe multiverse
+deb $LB_PARENT_MIRROR_BINARY_SECURITY $SUITE-security universe multiverse
+deb $LB_PARENT_MIRROR_BINARY_VOLATILE $SUITE-updates universe multiverse
+EOF
+		if [ "$PROPOSED" ]; then
+			cat >> config/archives/dvd.binary.list << EOF
+deb $LB_PARENT_MIRROR_BINARY_VOLATILE $SUITE-proposed universe multiverse
+EOF
+		fi
+		;;
+esac
+
+# cribbed from cdimage, perhaps this should be a small helper script in germinate?
+add_inheritance () {
+	case " $inherit " in
+		*" $1 "*)
+			;;
+		*)
+			inherit="${inherit:+$inherit }$1"
+			;;
+	esac
+}
+
+expand_inheritance () {
+	for seed in $(grep "^$1:" config/germinate-output/structure | cut -d: -f2); do
+		expand_inheritance "$seed"
+	done
+	add_inheritance "$1"
+}
+
+inheritance () {
+	inherit=
+	expand_inheritance "$1"
+	echo "$inherit"
+}
+
+if [ "$PREINSTALLED" = "true" ]; then
+	if [ -n "$PREINSTALL_POOL_SEEDS" ]; then
+		mkdir -p config/germinate-output
+		case $PROJECT in
+			kubuntu-active*)
+				SEED=kubuntu-active.$SUITE
+				;;
+			kubuntu*)
+				SEED=kubuntu.$SUITE
+				;;
+			xubuntu*)
+				SEED=xubuntu.$SUITE
+				;;
+			*)
+				SEED=ubuntu.$SUITE
+				;;
+		esac
+		(cd config/germinate-output && germinate --no-rdepends --no-installer \
+			-S $SEEDMIRROR -m $MIRROR -d $SUITE -s $SEED \
+			${COMPONENTS:+-c "$COMPONENTS"} -a $ARCH)
+
+		UNWANTED_SEEDS="${LIVE_TASK:+$LIVE_TASK }boot installer required"
+		for i in $UNWANTED_SEEDS; do
+			UNWANTED_SEEDS="${UNWANTED_SEEDS:+$UNWANTED_SEEDS }$(inheritance $i)"
+		done
+
+		for i in $PREINSTALL_POOL_SEEDS; do
+			PREINSTALL_POOL_SEEDS="${PREINSTALL_POOL_SEEDS:+$PREINSTALL_POOL_SEEDS }$(inheritance $i)"
+		done
+
+		for i in $PREINSTALL_POOL_SEEDS; do
+			case " $UNWANTED_SEEDS " in
+				*" $i "*)
+					;;
+				*)
+					PPS_EXP="${PPS_EXP:+$PPS_EXP }$i"
+					;;
+			esac
+		done
+
+		for i in $PPS_EXP; do
+			PREINSTALL_POOL="$PREINSTALL_POOL $(awk '{print $1}' \
+			config/germinate-output/$i | egrep -v '^-|^Package|^\|' | tr '\n' ' ')"
+		done
+	fi
+	if [ -n "$PREINSTALL_POOL" ]; then
+		mkdir -p config/gnupg
+		mkdir -p config/indices
+		for component in $COMPONENTS; do
+			(cd config/indices && \
+		 	 wget $MIRROR/indices/override.$SUITE.$component && \
+			 wget $MIRROR/indices/override.$SUITE.extra.$component \
+			)
+		done
+		PREINSTALL_POOL_HOOK=config/chroot_local-hooks/preinstall-pool.sh
+		echo "#! /bin/sh" > $PREINSTALL_POOL_HOOK
+		echo "mkdir -p /var/lib/preinstalled-pool/pool/" >> $PREINSTALL_POOL_HOOK
+		echo "cd /var/lib/preinstalled-pool/pool/" >> $PREINSTALL_POOL_HOOK
+		echo "apt-get -y download $PREINSTALL_POOL" >> $PREINSTALL_POOL_HOOK
+	fi
+fi
