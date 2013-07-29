@@ -66,6 +66,7 @@ LIVE_TASK=
 PREINSTALLED=false
 PREINSTALL_POOL=
 PREINSTALL_POOL_SEEDS=
+BINARYFORMAT=iso
 
 case $IMAGEFORMAT in
 	ext2|ext3|ext4)
@@ -343,7 +344,7 @@ lb config noauto \
 	${KERNEL_FLAVOURS:+--linux-flavours "$KERNEL_FLAVOURS"} \
 	--initsystem none \
 	--bootloader "$BOOTLOADER" \
-	--initramfs-compression lzma \
+	--initramfs-compression gzip \
 	$OPTS
 
 # On some projects/architectures, we want to use backported kernels with
