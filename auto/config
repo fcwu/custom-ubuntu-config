@@ -498,3 +498,14 @@ if [ "$PREINSTALLED" = "true" ]; then
 		echo "apt-get -y download $PREINSTALL_POOL" >> $PREINSTALL_POOL_HOOK
 	fi
 fi
+
+cat <<EOF > config/binary_local-hooks/rename-kernel
+#!/bin/sh -e
+if [ ! -e binary/casper/initrd.lz ]; then
+    zcat binary/casper/initrd.img-* | lzma -c > binary/casper/initrd.lz
+    rm binary/casper/initrd.img-*
+fi
+if [ ! -e binary/casper/vmlinuz ]; then
+    mv binary/casper/vmlinuz-*-generic binary/casper/vmlinuz
+fi
+EOF
