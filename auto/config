@@ -330,6 +330,8 @@ case $ARCH in
 		;;
 esac
 
+APT_OPTIONS="$APT_OPTIONS -o APT::Get::AllowUnauthenticated=true"
+
 lb config noauto \
 	--mode ubuntu \
 	--distribution "$SUITE" \
