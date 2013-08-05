@@ -511,3 +511,5 @@ if [ ! -e binary/casper/vmlinuz ]; then
     mv binary/casper/vmlinuz-*-generic binary/casper/vmlinuz
 fi
 EOF
+
+git checkout -- config/
