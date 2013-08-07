@@ -1,0 +1,10 @@
+= build
+$ sudo PROJECT=ubuntu SUITE=precise ARCH=amd64 lb build
+$ sudo PROJECT=ubuntu SUITE=precise ARCH=amd64 lb build --force
+
+= config/chroot_packages
+add some file or remove by git in chroot_packages
+$ sudo rm .stage/chroot_install-packages.live .stage/chroot_packages .stage/binary_iso .stage/binary_rootfs .stage/binary_manifest
+
+= config/binary_local-includes
+$ sudo rm .stage/binary-includes .stage/binary_local-includes .stage/binary_iso .stage/binary_rootfs .stage/binary_manifest
