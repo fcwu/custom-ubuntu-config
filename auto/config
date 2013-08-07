@@ -135,7 +135,14 @@ case $PROJECT in
 				# sufficiently that some manual hints are
 				# needed.
 				add_package install ubuntu-minimal ubuntu-standard ubuntu-desktop libqt4-sql-sqlite notify-osd
-				add_package install xserver-xorg-lts-quantal
+                case $SUITE in
+                    precise)
+                        add_package install xserver-xorg-lts-quantal
+                        ;;
+                    *)
+                        add_package install xserver-xorg
+                        ;;
+                esac
 				;;
 			*)
 				add_task install minimal standard ubuntu-desktop
@@ -146,13 +153,24 @@ case $PROJECT in
 		# tasks post-release at the moment.
 		case $ARCH in
 			amd64)
-				add_package live linux-signed-generic-lts-quantal
+                case $SUITE in
+                    precise)
+                        add_package live linux-signed-generic-lts-quantal
+                        ;;
+                    *)
+                        add_package live linux-signed-generic
+                        ;;
+                esac
 				;;
 		esac
 		case $ARCH in
 			amd64|i386)
-				KERNEL_FLAVOURS=generic-lts-quantal
-				;;
+                case $SUITE in
+                    precise)
+                        KERNEL_FLAVOURS=generic-lts-quantal
+                        ;;
+                esac
+                ;;
 		esac
 		;;
 
@@ -347,6 +365,8 @@ lb config noauto \
 	--initsystem none \
 	--bootloader "$BOOTLOADER" \
 	--initramfs-compression gzip \
+    --archive-areas "main restricted universe" \
+    --parent-archive-areas "main restricted universe" \
 	$OPTS
 
 # On some projects/architectures, we want to use backported kernels with
@@ -508,8 +528,11 @@ if [ ! -e binary/casper/initrd.lz ]; then
     rm binary/casper/initrd.img-*
 fi
 if [ ! -e binary/casper/vmlinuz ]; then
-    mv binary/casper/vmlinuz-*-generic binary/casper/vmlinuz
+    for i in binary/casper/vmlinuz-*-generic; do
+        vmlinuz=\$i
+    done
+    mv \$vmlinuz binary/casper/vmlinuz
 fi
 EOF
 
-git checkout -- config/
+git checkout -- config/ 2>/dev/null
